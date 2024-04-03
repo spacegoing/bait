@@ -4,14 +4,14 @@ defaults:
   - /base/exp_config@_here_
 
 exp_config:
-  name: goal_model_smooth
-  experiment: goal_classification
+  name: binary_model
+  experiment: goal_model
 
 logging_config:
-  project: leandojo_goals
-  offline: true
+  project: goal_model
+  offline: false
 
-experiment:
+model:
   _target_: models.end_to_end.search_models.goal_model.model.SimpleGoalModel
   model_name: kaiyuy/leandojo-lean3-tacgen-byt5-small
   lr: 1e-5
@@ -31,7 +31,8 @@ data_module:
   critic_tok: '<extra_id_0>'
   provable_tok: '<extra_id_1>'
   unprovable_tok: '<extra_id_2>'
-  trace_files: null
+  
+  trace_files: runs/seq2seq/seq2seq_eval_iteration_1/2024_03_01/21_46_35/traces/0
 
 trainer:
   accelerator: gpu
@@ -44,9 +45,7 @@ trainer:
     cpu_checkpointing: false
     logging_batch_size_per_gpu: 1
   gradient_clip_val: 1.0
-  max_steps: 5
-  val_check_interval: 1
-  #  limit_val_batches: 0.0
+  val_check_interval: 1000
   callbacks:
     - _target_: lightning.pytorch.callbacks.LearningRateMonitor
       logging_interval: step

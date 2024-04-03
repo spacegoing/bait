@@ -93,7 +93,10 @@ class UpDown(Search):
         # sample from fringe scores
         fringe_probs = F.softmax(torch.FloatTensor(fringe_scores), dim=0)
         fringe_m = Categorical(fringe_probs)
-        sampled_score = fringe_m.sample()
+
+        sampled_ind = fringe_m.sample()
+
+        sampled_score = fringe_scores[sampled_ind]
 
         # find fringe for selected node by choosing all goals with the same score.
         # (may include other goals with same score not in fringe)

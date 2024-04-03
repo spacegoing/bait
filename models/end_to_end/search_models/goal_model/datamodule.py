@@ -31,7 +31,7 @@ class GoalProvableDataModule(pl.LightningDataModule):
             trace_files=None,
             database='lean_e2e',
             collection='goal_labels',
-            visit_threshold=2048
+            visit_threshold=1024
     ) -> None:
 
         super().__init__()
@@ -68,24 +68,27 @@ class GoalProvableDataModule(pl.LightningDataModule):
         self.setup()
 
     def prepare_data(self):
+        db = MongoClient()[self.database]
+
+        if self.collection in db.list_collection_names():
+            logger.info('Collection exists, dropping.')
+            db[self.collection].drop()
+
+        logger.info('Loading traces..')
 
         trace_files = filter_traces(self.trace_files)
         traces = []
 
-        for file in trace_files:
+        for file in tqdm(trace_files):
             with open(file, 'rb') as f:
                 traces.append(pickle.load(f))
 
         if not traces:
             return
 
-        logger.info(f'Processing {len(traces)} traces for goal model...')
-
         collection = MongoClient()[self.database][self.collection]
 
-        for trace in tqdm(traces):
-            if isinstance(trace.tree, ErrorNode):
-                continue
+        def add_trace(trace, split):
 
             nodes = trace.nodes
             nodes[trace.tree.goal] = trace.tree
@@ -96,7 +99,7 @@ class GoalProvableDataModule(pl.LightningDataModule):
                 for a in node.ancestors:
                     visits[a] += node.visit_count
 
-            # todo soft labels for visit count, ranging from 0 to 0.5
+            # todo soft labels for visit count?
             for node in trace.nodes.values():
                 node_data = {'goal': node.goal}
                 proof_len = node.distance_to_proof
@@ -106,19 +109,30 @@ class GoalProvableDataModule(pl.LightningDataModule):
                     node_data['target'] = 0
                 else:
                     continue
+                node_data['split'] = split
                 collection.insert_one(node_data)
+
+        logger.info('Processing traces for training goal model...')
+        for trace in tqdm(traces[:int(0.9 * len(traces))]):
+            if isinstance(trace.tree, ErrorNode):
+                continue
+
+            add_trace(trace, 'train')
+
+        logger.info('Processing traces for validating goal model...')
+        for trace in tqdm(traces[int(0.9 * len(traces)):]):
+            if isinstance(trace.tree, ErrorNode):
+                continue
+
+            add_trace(trace, 'val')
 
         add_rand_idx(collection)
 
     def setup(self, stage: Optional[str] = None) -> None:
-        # 90/10 train/val ratio
-        train_range = (0., 0.9)
-        val_range = (0.9, 1.)
-
-        train_filter = [{'$match': {'rand_idx': {'$gt': train_range[0], '$lt': train_range[1]}}},
+        train_filter = [{'$match': {'split': 'train'}},
                         {'$sort': {'rand_idx': 1}}]
 
-        val_filter = [{'$match': {'rand_idx': {'$gt': val_range[0], '$lt': val_range[1]}, 'target': {'$in': [0, 1]}}},
+        val_filter = [{'$match': {'split': 'val'}},
                       {'$sort': {'rand_idx': 1}}]
 
         if stage in (None, "fit"):

@@ -7,14 +7,14 @@ exp_config:
   name: seq2seq_train
   experiment: seq2seq
 
-  resume: true
-  directory: runs/seq2seq/seq2seq_train/2024_03_03/11_01_25
+#  resume: true
+#  directory: runs/seq2seq/seq2seq_train/2024_03_03/11_01_25
 
 logging_config:
   project: seq2seq
   offline: false
 
-  id: xi59l6aq
+#  id: xi59l6aq
 
 model:
   _target_: models.end_to_end.tactic_models.generator.model.RetrievalAugmentedGenerator
