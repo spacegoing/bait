@@ -619,7 +619,7 @@ class HTPS(Search):
 
 # implement as in paper, assuming n sequential expansions per goal
 class TS_HTPS(Search):
-    def __init__(self, goal_model: GoalModel, exploration_constant=1):
+    def __init__(self, goal_model: GoalModel):
         super().__init__()
         self.goal_model = goal_model
 
