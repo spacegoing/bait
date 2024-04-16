@@ -4,12 +4,10 @@ defaults:
   - /base/exp_config@_here_
 
 exp_config:
-  name: updown
+  name: htps
   experiment: end_to_end
-  
 #  resume: true
 #  directory: runs/end_to_end/original/2024_02_08/09_55_29
-
 
 logging_config:
   project: end_to_end
@@ -36,7 +34,7 @@ env_config:
 shuffle: false
 
 # Number of End-to-End Eval -> Train -> Eval loops
-num_iterations: 100 #2
+num_iterations: 5 #2
 resume_iteration: 0
 
 # Total time allowed for a single proof attempt
@@ -104,28 +102,32 @@ tac_model:
 #      lora_alpha: 16
 #      lora_dropout: 0.01
 
+
 search_model:
+    search: htps
+    ckpt_path: runs/goal_model/binary_model/2024_03_08/17_18_00/checkpoints/last.ckpt
+    distributed: true
+    gpu_per_process: 0.45
+    cpu_per_process: 0.5
+    exploration_constant: 1
+
+#  search: bfs
 #  search: bestfs
 
-  search: updown
-  ckpt_path: runs/goal_model/binary_model/2024_03_08/17_18_00/checkpoints/last.ckpt
-  distributed: true
-  gpu_per_process: 0.45 #0.225
-  cpu_per_process: 1 # 0.5
-
-#  search: htps
-#  ckpt_path: goal_model.ckpt # goal_step.ckpt
+#  search: updown
+#  ckpt_path: runs/goal_model/binary_model/2024_03_08/17_18_00/checkpoints/last.ckpt
 #  distributed: true
-#  gpu_per_process: 0.45
-#  cpu_per_process: 0.5
-#  exploration_constant: 1
+#  gpu_per_process: 0.45 #0.225
+#  cpu_per_process: 1 # 0.5
+
 
 # Commands to run for retraining the model(s) after every evaluation
 train_after_eval:
   - python3 -m experiments.lightning_runner --config-name=end_to_end/train/goal_model/run data_module.trace_files=${exp_config.directory}/traces
-  - python3 -m experiments.lightning_runner --config-name=end_to_end/train/gen_seq2seq/run data_module.trace_files=${exp_config.directory}/traces
+#  - python3 -m experiments.lightning_runner --config-name=end_to_end/train/gen_seq2seq/run data_module.trace_files=${exp_config.directory}/traces
+
 # The model and its checkpoint attribute to update.
 # Must be same length as train_after_eval, with each index corresponding to the associated command
 update_checkpoints:
-  - [ search_model, ckpt_path ]
-  - [tac_model, ckpt_path]
+    - [ search_model, ckpt_path ]
+#  - [tac_model, ckpt_path]
