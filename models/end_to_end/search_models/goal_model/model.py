@@ -19,6 +19,8 @@ from torchmetrics.classification import BinaryConfusionMatrix
 
 
 # todo live evaluation as with tactic models?
+
+# todo allow loading of pre-trained goal model
 class SimpleGoalModel(pl.LightningModule):
     def __init__(
             self,
@@ -51,12 +53,14 @@ class SimpleGoalModel(pl.LightningModule):
 
         self.logits_processor = NoBadWordsLogitsProcessor(bad_words_ids=self.bad_ids, eos_token_id=None)
 
+        # control bias, e.g. weight for better recall vs precision/accuracy
+
         weights = torch.zeros(len(self.tokenizer))
-        # control bias towards provable, i.e. weighting for better recall vs precision/accuracy
         weights[self.provable_id] = 2
         weights[self.unprovable_id] = 1
-        self.ce_loss = CrossEntropyLoss(ignore_index=1, weight=weights)
-        self.bcm = BinaryConfusionMatrix(normalize='true')
+
+        self.ce_loss = CrossEntropyLoss(ignore_index=1)
+        self.bcm = BinaryConfusionMatrix()  # normalize='true')
 
     @classmethod
     def load(
@@ -149,6 +153,24 @@ class SimpleGoalModel(pl.LightningModule):
         self.log(
             "false_negs",
             confusion[1][0],
+            on_epoch=True,
+            sync_dist=True,
+            batch_size=len(batch),
+            prog_bar=True
+        )
+
+        self.log(
+            "true_negs",
+            confusion[0][0],
+            on_epoch=True,
+            sync_dist=True,
+            batch_size=len(batch),
+            prog_bar=True
+        )
+
+        self.log(
+            "false_pos",
+            confusion[0][1],
             on_epoch=True,
             sync_dist=True,
             batch_size=len(batch),

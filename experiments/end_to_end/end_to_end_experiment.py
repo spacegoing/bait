@@ -3,34 +3,26 @@ from __future__ import division
 from __future__ import print_function
 
 import glob
-import json
 import os
 import pickle
 import random
 import re
 import sys
 import time
-import traceback
 from subprocess import CalledProcessError
-from lean_dojo.utils import execute
 
 import hydra
 import ray
 import torch
 import wandb
+from lean_dojo.utils import execute
 from loguru import logger
 from omegaconf import OmegaConf
 from ray.util.actor_pool import ActorPool
 from tqdm import tqdm
 
-from data.HOList.utils import io_util
-from environments.HOL4.hol4_env import HOL4Env
-from environments.HOList.holist_env import HOListEnv
-from environments.HOList.proof_assistant import proof_assistant_pb2
-from environments.LeanDojo.get_lean_theorems import _get_theorems
 from experiments.end_to_end.common import set_logger
-from experiments.end_to_end.common import zip_strict
-from environments.LeanDojo.leandojo_env import LeanDojoEnv
+from experiments.end_to_end.env_helper import get_thm_name, get_env, get_theorems
 from experiments.end_to_end.proof_node import *
 from experiments.end_to_end.search_result import SearchResult
 from models.end_to_end.search_models.search_models import get_search_model
@@ -196,8 +188,8 @@ class EndToEndProver:
                     except Exception as e:
                         if not (self.env_time >= self.timeout):
                             logger.warning(f"Exception not timeout: {e}")
-                            traceback.print_exc()
                             root.status = Status.FAILED
+                            self.log_error(str(e), get_thm_name(self.env_name, env.thm))
 
                     self.total_time = time.monotonic() - time_start
 
@@ -237,19 +229,29 @@ class DistributedProver:
 
         ray.init(num_gpus=config.num_gpus, num_cpus=config.num_cpus)
 
-        device = torch.device("cuda") if config.with_gpus else torch.device("cpu")
+        device = torch.device("cuda") if config.num_gpus > 0 else torch.device("cpu")
 
         prover_pool = []
 
-        for i in range(config.logical_gpus):
+        if config.num_gpus == 0:
             tac_model = get_tac_model(config.tac_model, device)
             search_model = get_search_model(config.search_model, device)
 
-            prover_pool.extend(
-                [ray.remote(num_gpus=config.gpu_per_prover, num_cpus=config.cpu_per_prover)(EndToEndProver).remote(
-                    tac_model=tac_model, search_model=search_model, timeout=config.env_timeout,
-                    directory=config.exp_config.directory, env_name=config.env_config.env, iteration=iteration
-                ) for _ in range(config.provers_per_gpu)])
+            prover_pool.append(ray.remote(num_cpus=config.cpu_per_prover)(EndToEndProver).remote(
+                tac_model=tac_model, search_model=search_model, timeout=config.env_timeout,
+                directory=config.exp_config.directory, env_name=config.env_config.env, iteration=iteration
+            ))
+
+        else:
+            for i in range(config.logical_gpus):
+                tac_model = get_tac_model(config.tac_model, device)
+                search_model = get_search_model(config.search_model, device)
+
+                prover_pool.extend(
+                    [ray.remote(num_gpus=config.gpu_per_prover, num_cpus=config.cpu_per_prover)(EndToEndProver).remote(
+                        tac_model=tac_model, search_model=search_model, timeout=config.env_timeout,
+                        directory=config.exp_config.directory, env_name=config.env_config.env, iteration=iteration
+                    ) for _ in range(config.provers_per_gpu)])
 
         self.prover_pool = ActorPool(prover_pool)
 
@@ -275,104 +277,6 @@ class DistributedProver:
         except ray.exceptions.RayActorError as ex:
             logger.error(ex)
             sys.exit(1)
-
-
-# todo hack for now, just load theorem database globally for hol4 get_thm_name
-hol4_thm_db = json.load(open('/home/sean/Documents/phd/bait/data/HOL4/data/adjusted_db.json'))
-
-
-def get_thm_name(env, thm):
-    if env == 'holist':
-        return str(thm.fingerprint)
-    elif env == 'leandojo':
-        return str(thm.full_name)
-    elif env == 'hol4':
-        # theoryName.LemmaName
-        return '.'.join(hol4_thm_db[thm[0]][:2])
-    else:
-        raise NotImplementedError
-
-
-def get_env(cfg):
-    if cfg == 'leandojo':
-        return LeanDojoEnv
-    elif cfg == 'holist':
-        return HOListEnv
-    elif cfg == 'hol4':
-        return HOL4Env
-    else:
-        raise NotImplementedError
-
-
-def get_hol4_theorems(thm_db, goal_db, prev_theorems):
-    thm_db = json.load(open(thm_db))
-
-    goals = pickle.load(open(goal_db, "rb"))
-    final_theorems = []
-
-    for theorem in goals:
-        # for theorem in enumerate(thm_db.keys()):
-        if theorem in prev_theorems:
-            continue
-        else:
-            final_theorems.append(theorem)
-
-    theorems = final_theorems
-    theorems = list(zip_strict(theorems, [thm_db] * len(theorems)))
-    return theorems
-
-
-def get_holist_theorems(thm_db, prev_theorems):
-    theorem_db = io_util.load_theorem_database_from_file(
-        str(thm_db))
-
-    # todo filter by config split, library etc.
-    theorems = [thm for thm in theorem_db.theorems if thm.tag == proof_assistant_pb2.Theorem.THEOREM]
-
-    # Remove proven theorems if resuming
-    final_theorems = []
-
-    for i, theorem in enumerate(theorems):
-        if theorem.fingerprint in prev_theorems:
-            continue
-        else:
-            final_theorems.append(theorem)
-
-    theorems = final_theorems
-    theorems = list(zip_strict(theorems, [theorem_db] * len(theorems)))
-
-    return theorems
-
-
-def get_lean_thms(config, prev_theorems):
-    repo, theorems, positions = _get_theorems(config)
-
-    # Remove proven theorems if resuming
-    final_theorems = []
-    final_positions = []
-
-    for i, theorem in enumerate(theorems):
-        if theorem.full_name in prev_theorems:
-            continue
-        else:
-            final_theorems.append(theorem)
-            final_positions.append(positions[i])
-
-    theorems = final_theorems
-    positions = final_positions
-
-    theorems = list(zip_strict([repo] * len(theorems), theorems, positions))
-
-    return theorems
-
-
-def get_theorems(cfg, prev_theorems):
-    if cfg.env == 'leandojo':
-        return get_lean_thms(cfg, prev_theorems)
-    elif cfg.env == 'holist':
-        return get_holist_theorems(cfg.path_theorem_database, prev_theorems)
-    elif cfg.env == 'hol4':
-        return get_hol4_theorems(cfg.path_theorem_database, cfg.path_goal_database, prev_theorems)
 
 
 @hydra.main(config_path="../../configs")

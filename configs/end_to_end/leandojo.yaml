@@ -4,15 +4,15 @@ defaults:
   - /base/exp_config@_here_
 
 exp_config:
-  name: htps
+  name: htps_no_critic
   experiment: end_to_end
-#  resume: true
-#  directory: runs/end_to_end/original/2024_02_08/09_55_29
+  resume: true
+  directory: runs/end_to_end/htps_no_critic/2024_04_21/16_34_02
 
 logging_config:
   project: end_to_end
   offline: false
-#  id: aohfsen9
+  id: d96i3o8b
 
 num_theorems: 2000 #94000
 
@@ -94,7 +94,8 @@ tac_model:
       eval_num_theorems: 200
       shuffle: false
       timeout: 600
-    # configuration for LoRA models
+
+# configuration for LoRA models
 #    lora_config:
 #      target_modules: ['q', 'k', 'v', 'o', 'wo', 'lm_head']
 #      task_type: "SEQ_2_SEQ_LM"
@@ -122,12 +123,12 @@ search_model:
 
 
 # Commands to run for retraining the model(s) after every evaluation
-train_after_eval:
-  - python3 -m experiments.lightning_runner --config-name=end_to_end/train/goal_model/run data_module.trace_files=${exp_config.directory}/traces
+train_after_eval: null
+#  - python3 -m experiments.lightning_runner --config-name=end_to_end/train/goal_model/run data_module.trace_files=${exp_config.directory}/traces
 #  - python3 -m experiments.lightning_runner --config-name=end_to_end/train/gen_seq2seq/run data_module.trace_files=${exp_config.directory}/traces
 
 # The model and its checkpoint attribute to update.
 # Must be same length as train_after_eval, with each index corresponding to the associated command
-update_checkpoints:
-    - [ search_model, ckpt_path ]
+update_checkpoints: null
+#    - [ search_model, ckpt_path ]
 #  - [tac_model, ckpt_path]

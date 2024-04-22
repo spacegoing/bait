@@ -112,9 +112,9 @@ def get_tac_model(config, device):
 
         if config.distributed:
             return ray.remote(num_gpus=config.gpu_per_process, num_cpus=config.cpu_per_process)(ReProverTacGen).remote(
-                tac_model=tac_gen)
+                tac_model=tac_gen, num_sampled_tactics=config.num_sampled_tactics)
         else:
-            return ReProverTacGen(tac_model=tac_gen)
+            return ReProverTacGen(tac_model=tac_gen, num_sampled_tactics=config.num_sampled_tactics)
 
     elif config.model == 'ilql':
 

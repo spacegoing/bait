@@ -13,7 +13,7 @@ from experiments.end_to_end.common import (
     Batch,
 )
 from experiments.end_to_end.process_traces import add_rand_idx, filter_traces
-from experiments.end_to_end.proof_node import ErrorNode
+from experiments.end_to_end.proof_node import ErrorNode, Status
 from experiments.end_to_end.stream_dataset import GoalStreamDataset, worker_init_fn
 
 
@@ -30,8 +30,9 @@ class GoalProvableDataModule(pl.LightningDataModule):
             unprovable_tok: str,
             trace_files=None,
             database='lean_e2e',
-            collection='goal_labels',
-            visit_threshold=1024
+            collection='train_goal_data_2',
+            visit_threshold=1024,
+            replace='keep', # keep, add or drop if collection exists
     ) -> None:
 
         super().__init__()
@@ -58,6 +59,8 @@ class GoalProvableDataModule(pl.LightningDataModule):
 
         self.current_train_batch_index = 0
 
+        self.replace = replace
+
     def state_dict(self):
         self.current_train_batch_index = self.ds_train.start_idx
         state = {"current_train_batch_index": self.current_train_batch_index}
@@ -71,25 +74,27 @@ class GoalProvableDataModule(pl.LightningDataModule):
         db = MongoClient()[self.database]
 
         if self.collection in db.list_collection_names():
-            logger.info('Collection exists, dropping.')
-            db[self.collection].drop()
+            if self.replace == 'keep':
+                logger.info('Collection exists, skipping.')
+                return
+            elif self.replace == 'add':
+                logger.info('Collection exists, adding to.')
+            elif self.replace == 'drop':
+                logger.info('Collection exists, dropping.')
+                db[self.collection].drop()
+            else:
+                raise ValueError(f'Invalid value for replace: {self.replace}')
 
         logger.info('Loading traces..')
 
-        trace_files = filter_traces(self.trace_files)
-        traces = []
-
-        for file in tqdm(trace_files):
-            with open(file, 'rb') as f:
-                traces.append(pickle.load(f))
-
-        if not traces:
-            return
-
         collection = MongoClient()[self.database][self.collection]
 
-        def add_trace(trace, split):
+        trace_files = filter_traces(self.trace_files)
 
+        if not trace_files:
+            return
+
+        def add_trace(trace, split):
             nodes = trace.nodes
             nodes[trace.tree.goal] = trace.tree
 
@@ -105,6 +110,8 @@ class GoalProvableDataModule(pl.LightningDataModule):
                 proof_len = node.distance_to_proof
                 if proof_len < math.inf:
                     node_data['target'] = 1
+                elif node.status == Status.FAILED:
+                    node_data['target'] = 0
                 elif visits[node.goal] >= self.visit_threshold:
                     node_data['target'] = 0
                 else:
@@ -113,15 +120,22 @@ class GoalProvableDataModule(pl.LightningDataModule):
                 collection.insert_one(node_data)
 
         logger.info('Processing traces for training goal model...')
-        for trace in tqdm(traces[:int(0.9 * len(traces))]):
-            if isinstance(trace.tree, ErrorNode):
+        for file in tqdm(trace_files[:int(0.9 * len(trace_files))]):
+            with open(file, 'rb') as f:
+                trace = pickle.load(f)
+
+            if isinstance(trace.tree, ErrorNode) or not trace.tree.out_edges:
                 continue
 
             add_trace(trace, 'train')
 
         logger.info('Processing traces for validating goal model...')
-        for trace in tqdm(traces[int(0.9 * len(traces)):]):
-            if isinstance(trace.tree, ErrorNode):
+
+        for file in tqdm(trace_files[int(0.9 * len(trace_files)):]):
+            with open(file, 'rb') as f:
+                trace = pickle.load(f)
+
+            if isinstance(trace.tree, ErrorNode) or not trace.tree.out_edges:
                 continue
 
             add_trace(trace, 'val')

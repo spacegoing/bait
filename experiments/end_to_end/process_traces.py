@@ -52,7 +52,7 @@ def filter_traces(trace_dir):
 
     # simple filter, take most recent trace for unproven, shortest proof for proven
     ret_files = []
-    for thm, files in file_dict.items():
+    for thm, files in tqdm(file_dict.items()):
         # sort traces by most recent first
         files = sorted(files, key=lambda x: x[1], reverse=True)
 

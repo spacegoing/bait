@@ -4,7 +4,7 @@ defaults:
   - /base/exp_config@_here_
 
 exp_config:
-  name: binary_model
+  name: train_data_with_fails
   experiment: goal_model
 
 logging_config:
@@ -32,7 +32,13 @@ data_module:
   provable_tok: '<extra_id_1>'
   unprovable_tok: '<extra_id_2>'
   
-  trace_files: runs/seq2seq/seq2seq_eval_iteration_1/2024_03_01/21_46_35/traces/0
+  trace_files: runs/end_to_end/original/2024_02_15/00_47_29/traces/0 # test traces from 1 iter
+  # runs/train_traces/0 # train traces
+
+  replace: 'keep' # add/keep/drop files wrt the existing collection
+
+  # runs/seq2seq/seq2seq_eval_iteration_1/2024_03_01/21_46_35/traces/0
+
 
 trainer:
   accelerator: gpu
@@ -45,7 +51,10 @@ trainer:
     cpu_checkpointing: false
     logging_batch_size_per_gpu: 1
   gradient_clip_val: 1.0
-  val_check_interval: 1000
+
+  val_check_interval: 5000
+  limit_val_batches: 2000
+
   callbacks:
     - _target_: lightning.pytorch.callbacks.LearningRateMonitor
       logging_interval: step
@@ -58,8 +67,8 @@ trainer:
       dirpath: ${exp_config.directory}/checkpoints
       auto_insert_metric_name: true
       filename: "{epoch}-{step}-{val_acc:.2f}"
-    - _target_: lightning.pytorch.callbacks.EarlyStopping
-      monitor: val_acc
-      patience: 10
-      mode: max
-      verbose: true
+#    - _target_: lightning.pytorch.callbacks.EarlyStopping
+#      monitor: val_acc
+#      patience: 10
+#      mode: max
+#      verbose: true
